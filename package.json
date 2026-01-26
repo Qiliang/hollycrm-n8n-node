@@ -11,13 +11,13 @@
     "ai"
   ],
   "license": "MIT",
-  "homepage": "https://github.com/xiaoql/n8n-nodes-dashscope",
+  "homepage": "https://github.com/Qiliang/hollycrm-n8n-node",
   "author": {
-    "name": "xiaoql"
+    "name": "Qiliang"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/xiaoql/n8n-nodes-dashscope.git"
+    "url": "https://github.com/Qiliang/hollycrm-n8n-node"
   },
   "main": "index.js",
   "scripts": {
