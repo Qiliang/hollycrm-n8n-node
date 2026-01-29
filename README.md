@@ -1,71 +1,56 @@
-# n8n-nodes-dashscope
+# n8n-nodes-hollycrm
 
-这是一个 n8n 社区节点，用于调用阿里云 DashScope (通义千问) API。
+HollyCRM 自定义 n8n 节点集合。
 
-[n8n](https://n8n.io/) 是一个 [公平代码许可](https://docs.n8n.io/reference/license/) 的工作流自动化平台。
+## 节点介绍
 
-## 安装
+### DashScope
 
-在你的 n8n 实例中安装此社区节点：
+调用阿里云 **DashScope（通义千问）** API，在流程中进行大模型对话。
 
-1. 进入 **Settings > Community Nodes**
-2. 选择 **Install**
-3. 输入 `n8n-nodes-dashscope`
-4. 同意风险提示并点击 **Install**
+- **操作**：聊天补全（发送消息并获取 AI 响应）
+- **模型**：支持 Qwen Plus、Qwen Turbo、Qwen Max、Qwen Long 等
+- **多上下文**：可配置多个上下文输入，将不同来源的内容一并传给模型
+- **凭证**：需配置 DashScope API 凭证（`dashScopeApi`）
 
-## 功能
+---
 
-### DashScope 节点
+### Markdown
 
-支持以下操作：
+输入和处理 **Markdown 多行文本**，适合在流程中嵌入富文本内容。
 
-- **聊天补全** - 发送消息并获取 AI 响应
+- 支持多行 Markdown 编辑（标题、列表、粗体、斜体等）
+- 可自定义输出字段名（默认 `markdown`）
+- 选项：去除首尾空白、是否保留上游输入数据并合并到输出
 
-支持的模型：
+---
 
-- Qwen Plus (qwen-plus)
-- Qwen Turbo (qwen-turbo)  
-- Qwen Max (qwen-max)
-- Qwen Long (qwen-long)
+### Pandoc
 
-### 凭证配置
+使用 **Pandoc** 命令行进行**文档格式转换**，将二进制或文本文档转为指定格式。
 
-需要配置 DashScope API 凭证：
+- **输入格式**：docx、pptx、xlsx、json、html、text，或自动根据扩展名推断
+- **输出格式**：markdown、text
+- **数据来源**：从上游节点的二进制属性读取文档（默认属性名 `data`）
+- **环境变量**：通过 `PANDOC_PATH` 指定 Pandoc 可执行文件路径；支持 `extraArgs` 传递额外参数（如 `--standalone --toc`）
 
-1. 登录 [阿里云 DashScope 控制台](https://dashscope.console.aliyun.com/)
-2. 获取 API Key
-3. 在 n8n 中创建 DashScope API 凭证，填入 API Key
+---
 
-## 使用示例
+### Qwen ASR
 
-1. 添加 DashScope 节点到工作流
-2. 配置 DashScope API 凭证
-3. 选择模型（默认 qwen-plus）
-4. 填写系统提示词和用户消息
-5. 可选：配置温度、最大 Token 数等参数
-6. 执行节点获取 AI 响应
+使用阿里云 **DashScope Qwen ASR** 进行**语音识别**（语音转文本）。
 
-## 开发
+- **音频来源**：二进制数据（上游节点）或 URL
+- **模型**：如 Qwen3 ASR Flash 等
+- **凭证**：需配置 DashScope API 凭证（`dashScopeApi`）
 
-```bash
-# 安装依赖
-npm install
+---
 
-# 构建
-npm run build
+### TOON
 
-# 开发模式（监听文件变化）
-npm run dev
-```
+**JSON 与 TOON 格式互转**。TOON 是一种面向 Token 优化的对象表示法，可减少约 40% 的 Token 消耗，适合在调用大模型前压缩结构化数据。
 
-## 发布到 npm
+- **JSON 转 TOON**：将输入数据编码为 TOON 文本；支持字段选择、分隔符、缩进、键折叠、Token 统计等高级选项
+- **TOON 转 JSON**：将 TOON 文本解析为 JSON；支持路径展开等解码选项
 
-此项目使用 GitHub Actions 自动发布：
-
-1. 在 GitHub 仓库 Settings > Secrets 中添加 `NPM_TOKEN`
-2. 创建新的 Release 或手动触发 workflow
-3. 包将自动发布到 npm
-
-## 许可证
-
-MIT
+依赖 `@toon-format/toon` 库。

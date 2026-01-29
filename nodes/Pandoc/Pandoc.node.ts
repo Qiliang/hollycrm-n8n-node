@@ -1,0 +1,166 @@
+import {
+	IExecuteFunctions,
+	INodeExecutionData,
+	INodeType,
+	INodeTypeDescription,
+	NodeOperationError,
+} from 'n8n-workflow';
+
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { writeFile, readFile, unlink } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
+
+const execFileAsync = promisify(execFile);
+
+function getExtensionForFormat(format: string): string {
+	const map: Record<string, string> = {
+		markdown: 'md', markdown_strict: 'md', markdown_phpextra: 'md', markdown_mmd: 'md',
+		gfm: 'md', commonmark: 'md', commonmark_x: 'md',
+		plain: 'txt', text: 'txt', html: 'html', html5: 'html', rst: 'rst', latex: 'tex',
+		docx: 'docx', pptx: 'pptx', xlsx: 'xlsx', json: 'json', pdf: 'pdf', odt: 'odt', epub: 'epub',
+		asciidoc: 'adoc', docbook: 'xml', org: 'org', mediawiki: 'mediawiki', textile: 'textile', jira: 'jira',
+	};
+	return map[format] || format;
+}
+
+/** 输入格式选项值 -> pandoc -f 参数（空为自动检测） */
+function toPandocInputFormat(uiValue: string): string {
+	if (!uiValue || uiValue === '自动') return '';
+	if (uiValue === 'text') return 'plain';
+	return uiValue;
+}
+
+/** 输出格式选项值 -> pandoc -t 参数 */
+function toPandocOutputFormat(uiValue: string): string {
+	if (uiValue === 'text') return 'plain';
+	return uiValue;
+}
+
+export class Pandoc implements INodeType {
+	description: INodeTypeDescription = {
+		displayName: 'Pandoc',
+		name: 'hollycrm_pandoc',
+		icon: 'file:pandoc.svg',
+		group: ['transform'],
+		version: 1,
+		subtitle: '文档格式转换',
+		description: '使用 Pandoc 命令行将二进制文档转换为指定格式，通过 PANDOC_PATH 环境变量指定可执行路径',
+		defaults: {
+			name: 'Pandoc',
+		},
+		inputs: ['main'],
+		outputs: ['main'],
+		properties: [
+			{
+				displayName: '二进制属性名',
+				name: 'binaryPropertyName',
+				type: 'string',
+				default: 'data',
+				description: '包含待转换文档的二进制属性名称',
+			},
+			{
+				displayName: '输入格式',
+				name: 'fromFormat',
+				type: 'options',
+				options: [
+					{ name: '自动', value: '自动' },
+					{ name: 'docx', value: 'docx' },
+					{ name: 'pptx', value: 'pptx' },
+					{ name: 'xlsx', value: 'xlsx' },
+					{ name: 'json', value: 'json' },
+					{ name: 'html', value: 'html' },
+					{ name: 'text', value: 'text' },
+				],
+				default: '自动',
+				description: '输入文档格式，选“自动”时根据文件扩展名推断',
+			},
+			{
+				displayName: '输出格式',
+				name: 'toFormat',
+				type: 'options',
+				options: [
+					{ name: 'markdown', value: 'markdown' },
+					{ name: 'text', value: 'text' },
+				],
+				default: 'markdown',
+				description: '输出文档格式',
+			},
+			{
+				displayName: '输出为文本时的字段名',
+				name: 'outputFieldName',
+				type: 'string',
+				default: 'text',
+				description: '当输出格式为文本（如 markdown、html）时，存放结果的 JSON 字段名',
+			},
+			{
+				displayName: '额外参数',
+				name: 'extraArgs',
+				type: 'string',
+				default: '',
+				placeholder: '如 --standalone --toc',
+				description: '追加给 pandoc 的额外命令行参数（用空格分隔）',
+			},
+		],
+	};
+
+	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+		const pandocPath = process.env.PANDOC_PATH || 'pandoc';
+		const items = this.getInputData();
+		const returnData: INodeExecutionData[] = [];
+
+		for (let i = 0; i < items.length; i++) {
+			const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
+			const fromFormatUi = this.getNodeParameter('fromFormat', i) as string;
+			const toFormatUi = this.getNodeParameter('toFormat', i) as string;
+			const outputFieldName = this.getNodeParameter('outputFieldName', i) as string;
+			const extraArgsStr = (this.getNodeParameter('extraArgs', i) as string).trim();
+
+			const fromFormat = toPandocInputFormat(fromFormatUi);
+			const toFormat = toPandocOutputFormat(toFormatUi);
+
+			const binaryData = this.helpers.assertBinaryData(i, binaryPropertyName);
+			const buffer = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+			if (!buffer || buffer.length === 0) {
+				throw new NodeOperationError(this.getNode(), '二进制数据为空', { itemIndex: i });
+			}
+
+			const inputExt = fromFormat
+				? getExtensionForFormat(fromFormatUi)
+				: (binaryData.fileName?.split('.').pop() || 'bin');
+			const outputExt = getExtensionForFormat(toFormat);
+			const prefix = `n8n-pandoc-${Date.now()}-${i}`;
+			const inputPath = join(tmpdir(), `${prefix}-in.${inputExt}`);
+			const outputPath = join(tmpdir(), `${prefix}-out.${outputExt}`);
+
+			try {
+				await writeFile(inputPath, buffer, { mode: 0o600 });
+
+				const args: string[] = [];
+				if (fromFormat) {
+					args.push('-f', fromFormat);
+				}
+				args.push('-t', toFormat);
+				if (extraArgsStr) {
+					args.push(...extraArgsStr.split(/\s+/).filter(Boolean));
+				}
+				args.push(inputPath, '-o', outputPath);
+
+				await execFileAsync(pandocPath, args, { timeout: 120000 });
+
+				const content = await readFile(outputPath, 'utf-8');
+				const executionData = this.helpers.constructExecutionMetaData(
+					this.helpers.returnJsonArray({ [outputFieldName]: content }),
+					{ itemData: { item: i } },
+				);
+				returnData.push(...executionData);
+			} finally {
+				await unlink(inputPath).catch(() => {});
+				await unlink(outputPath).catch(() => {});
+			}
+		}
+
+		return [returnData];
+	}
+}
