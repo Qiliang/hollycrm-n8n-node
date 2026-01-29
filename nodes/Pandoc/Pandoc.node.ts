@@ -102,6 +102,13 @@ export class Pandoc implements INodeType {
 				placeholder: '如 --standalone --toc',
 				description: '追加给 pandoc 的额外命令行参数（用空格分隔）',
 			},
+			{
+				displayName: '透传上游数据',
+				name: 'passthroughData',
+				type: 'boolean',
+				default: true,
+				description: '是否将上游节点的 JSON 数据合并到输出中',
+			},
 		],
 	};
 
@@ -116,6 +123,7 @@ export class Pandoc implements INodeType {
 			const toFormatUi = this.getNodeParameter('toFormat', i) as string;
 			const outputFieldName = this.getNodeParameter('outputFieldName', i) as string;
 			const extraArgsStr = (this.getNodeParameter('extraArgs', i) as string).trim();
+			const passthroughData = this.getNodeParameter('passthroughData', i) as boolean;
 
 			const fromFormat = toPandocInputFormat(fromFormatUi);
 			const toFormat = toPandocOutputFormat(toFormatUi);
@@ -150,8 +158,11 @@ export class Pandoc implements INodeType {
 				await execFileAsync(pandocPath, args, { timeout: 120000 });
 
 				const content = await readFile(outputPath, 'utf-8');
+				const outputJson = passthroughData
+					? { ...items[i].json, [outputFieldName]: content }
+					: { [outputFieldName]: content };
 				const executionData = this.helpers.constructExecutionMetaData(
-					this.helpers.returnJsonArray({ [outputFieldName]: content }),
+					this.helpers.returnJsonArray(outputJson),
 					{ itemData: { item: i } },
 				);
 				returnData.push(...executionData);
